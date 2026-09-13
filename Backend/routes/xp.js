@@ -35,7 +35,7 @@ router.post('/complete-task/:taskId', verifyToken, async (req, res) => {
   const secondsSinceLast = (Date.now() - lastActive.getTime()) / 1000;
 
   // Call Python anomaly-check service
-  let checkResult = { valid: true, risk_score: 0 };
+   let checkResult = { valid: true, risk_score: 0 };
   try {
     const pyRes = await fetch(`${process.env.PYTHON_SERVICE_URL}/check-xp-event`, {
       method: 'POST',
@@ -46,11 +46,17 @@ router.post('/complete-task/:taskId', verifyToken, async (req, res) => {
         time_since_last_completion: secondsSinceLast,
       }),
     });
-    checkResult = await pyRes.json();
+
+    if (!pyRes.ok) {
+      const errText = await pyRes.text();
+      console.error('Python service returned error status', pyRes.status, errText);
+      // fail open — don't block legitimate task completion due to a service hiccup
+    } else {
+      checkResult = await pyRes.json();
+    }
   } catch (err) {
     console.error('Python service unreachable, defaulting to valid:', err.message);
   }
-
   if (!checkResult.valid) {
     return res.status(403).json({ error: 'Task completion flagged as suspicious', risk_score: checkResult.risk_score });
   }
